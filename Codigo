@@ -1,0 +1,104 @@
+#include <AFMotor.h>
+
+AF_DCMotor motorET(4);
+AF_DCMotor motorEF(3);
+AF_DCMotor motorDT(1);
+AF_DCMotor motorDF(2);
+
+const int sensor_ESQ = A0;
+const int sensor_CEN = A1;
+const int sensor_DIR = A2;
+
+// Limites analógicos individualizados
+const int thresholdEsq = 200;
+const int thresholdCen = 400;
+const int thresholdDir = 500;
+
+float Kp = 65.0;
+float Ki = 0.0;
+float Kd = 40.0;
+
+float erro = 0;
+float ultimoerro = 0;
+float integral = 0;
+
+const int velocidade = 140;
+const int vel_max = 255;
+const int vel_min = 0;
+
+void setMotoresLados(int velEsq, int velDir) {
+  if (velEsq >= 0) {
+    motorEF.run(BACKWARD);
+    motorET.run(BACKWARD);
+    motorEF.setSpeed(abs(velEsq));
+    motorET.setSpeed(abs(velEsq));
+  } else {
+    motorEF.run(FORWARD);
+    motorET.run(FORWARD);
+    motorEF.setSpeed(abs(velEsq));
+    motorET.setSpeed(abs(velEsq));
+  }
+  
+  if (velDir >= 0) {
+    motorDF.run(FORWARD);
+    motorDT.run(BACKWARD);
+    motorDF.setSpeed(abs(velDir));
+    motorDT.setSpeed(abs(velDir));
+  } else {
+    motorDF.run(BACKWARD);
+    motorDT.run(FORWARD);
+    motorDF.setSpeed(abs(velDir));
+    motorDT.setSpeed(abs(velDir));
+  }
+}
+
+void setup() {
+  pinMode(sensor_ESQ, INPUT);
+  pinMode(sensor_CEN, INPUT);
+  pinMode(sensor_DIR, INPUT);
+
+  setMotoresLados(0, 0);
+  delay(1000);
+}
+
+void loop() {
+  // Cada sensor agora compara com o seu threshold individual
+  bool sEsq = analogRead(sensor_ESQ) > thresholdEsq;
+  bool sCen = analogRead(sensor_CEN) > thresholdCen;
+  bool sDir = analogRead(sensor_DIR) > thresholdDir;
+
+  // Lógica das posições da linha
+  if (sEsq && !sCen && !sDir) {
+    erro = -2.0;
+  } else if (sEsq && sCen && !sDir) {
+    erro = -1.0;
+  } else if (!sEsq && sCen && !sDir) {
+    erro = 0.0;
+  } else if (!sEsq && sCen && sDir) {
+    erro = 1.0;
+  } else if (!sEsq && !sCen && sDir) { // Apenas sensor direito na linha
+    erro = 2.0;
+  } else if (!sEsq && !sCen && !sDir) { // Perdido (fora da linha)
+    if (ultimoerro > 0) erro = 3.0;
+    else if (ultimoerro < 0) erro = -3.0;
+  }
+
+  // Cálculo do PID
+  float P = erro;
+  integral += erro;
+  integral = constrain(integral, -50, 50);
+  float I = integral;
+  float D = erro - ultimoerro;
+
+  float correcao = (Kp * P) + (Ki * I) + (Kd * D);
+  ultimoerro = erro;
+
+  // Aplicação da velocidade
+  int velEsquerda = velocidade + correcao;
+  int velDireita = velocidade - correcao;
+
+  velEsquerda = constrain(velEsquerda, vel_min, vel_max);
+  velDireita = constrain(velDireita, vel_min, vel_max);
+
+  setMotoresLados(velEsquerda, velDireita);
+}
